@@ -27,15 +27,15 @@ void Server::sendToEveryone(Comunicate comunicate)
 	}
 }
 
-void Server::sendTo(Comunicate comunicate,bool i, std::shared_ptr<Client> sender = nullptr)
-{
-	Message message{ comunicate ,messageId ,0,sender,clients[i] };
+void Server::sendTo(Comunicate comunicate,bool receiver, std::shared_ptr<Client> sender = nullptr)
+{//u¿ywana do wysy³ania komunikatu serwera
+	Message message{ comunicate ,messageId ,0,sender,clients[receiver] };
 	messageHistory.push_back(message);
 
 	sf::Packet packet;
-	comunicate.sessionId = clients[i]->sessionId;
+	comunicate.sessionId = clients[receiver]->sessionId;
 	packet << comunicate;
-	this->udpSocket.send(packet, clients[i]->clientIP, clients[i]->clientPort);
+	this->udpSocket.send(packet, clients[receiver]->clientIP, clients[receiver]->clientPort);
 	this->messageId--;
 }
 
@@ -75,11 +75,11 @@ void Server::run()
 		sf::IpAddress receivedIP;
 		unsigned short receivedPort;
 		sf::Packet receivedPacket;
-		Comunicate receivedComunicate;
 
 		if (udpSocket.receive(receivedPacket, receivedIP, receivedPort) == sf::Socket::Done)
 		{
 			bool sender;
+			Comunicate receivedComunicate;
 			receivedPacket >> receivedComunicate;
 			if (clients[0] != nullptr && receivedIP == clients[0]->clientIP)sender = 0;
 			if (clients[1] != nullptr && receivedIP == clients[1]->clientIP)sender = 1;
@@ -117,7 +117,36 @@ void Server::run()
 				std::vector<UINT8> clientList = toUINTtab(this->prepareClientsList());
 				answerComunicate = Comunicate{7,7,messageId,0,this->prepareClientsList().length(),clientList};
 				this->sendToEveryone(answerComunicate);
+				std::cout << "Client joined succesfully" << std::endl;
 			}
+
+			if (receivedComunicate.operation == 7)//msg
+			{
+				if (receivedComunicate.answer == 0)//zwyk³a wiadomoœæ
+				{
+					//wiadomoœæ zwrotna do nadawcy (ACK)
+					Comunicate ackComunicate = receivedComunicate;
+					ackComunicate.answer = 3;
+					ackComunicate.datasize = 0;
+					ackComunicate.data = std::vector<UINT8>();
+					sf::Packet ackPacket;
+					ackPacket << ackComunicate;
+					this->sendTo(ackComunicate,sender);
+
+					//przes³anie wiadomoœci do odbiorcy
+					if (clients[!sender] != nullptr)
+					{
+						sf::Packet msgPacket;
+						msgPacket << receivedComunicate;
+						this->sendTo(receivedComunicate, !sender);
+					}
+				}
+				if (receivedComunicate.answer == 3)//ack msg
+				{
+					//Przes³aæ dalej do drugiego klienta
+				}
+			}
+			
 		}
 	}
 }
