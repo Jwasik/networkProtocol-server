@@ -80,6 +80,13 @@ void Server::run()
 	std::cout << sf::IpAddress::getLocalAddress().toString() << std::endl;
 	srand(time(NULL));
 
+	/*Comunicate test{7,7,7,7,7,std::vector<UINT8>()};
+	Comunicate test2;
+	sf::Packet pck;
+	pck << test;
+	pck >> test2;
+	this->print(test2);*/
+
 	while (1)
 	{
 		sf::IpAddress receivedIP;
@@ -123,7 +130,7 @@ void Server::run()
 						else
 						{
 							//gdy nie ma miejsca
-							
+							std::cout << "nie ma miejsca" << std::endl;
 							Comunicate answerComunicate = { 1,6,this->messageId,sessionId,0 ,std::vector<UINT8>() };
 							sf::Packet answerPacket;
 							answerPacket << answerComunicate;
@@ -136,10 +143,10 @@ void Server::run()
 
 					this->sendTo(answerComunicate, newCLient);
 
-					std::vector<UINT8> clientList = toUINTtab(this->prepareClientsList());
+					/*std::vector<UINT8> clientList = toUINTtab(this->prepareClientsList());
 					answerComunicate = Comunicate{ 7,7,messageId,0,this->prepareClientsList().length(),clientList };
 					if (clients[sender] != nullptr)this->sendTo(answerComunicate, sender);
-					if (clients[!sender] != nullptr)this->sendTo(answerComunicate, !sender);
+					if (clients[!sender] != nullptr)this->sendTo(answerComunicate, !sender);*/
 					std::cout << "Client joined succesfully" << std::endl;
 
 					messageId--;
@@ -190,7 +197,7 @@ void Server::run()
 						//przekazanie zaproszenia
 						this->sendTo(receivedComunicate, !sender);
 						clients[!sender]->invited = 1;
-						clients[sender]->ready = 1;
+						clients[sender]->ready = 0;
 					}
 				}
 				if (receivedComunicate.answer == 1)//accept
@@ -205,6 +212,7 @@ void Server::run()
 						this->sendTo(message, sender);
 
 						clients[sender]->ready = 1;
+						if(clients[!sender] != nullptr)clients[!sender]->ready = 1;
 
 						//poinformowanie zapraszaj¹cego
 						message = Comunicate{ 7,7,0,0,0,this->toUINTtab("Your invitation has been accepted") };
@@ -241,6 +249,7 @@ void Server::run()
 						this->sendTo(message, sender);
 
 						clients[sender]->invited = 0;
+						if(clients[!sender] != nullptr)clients[!sender]->ready = 0;
 
 						//poinformowanie zapraszaj¹cego
 						message = Comunicate{ 7,7,0,0,0,this->toUINTtab("Your invitation has been denied") };
@@ -294,7 +303,18 @@ void Server::run()
 
 sf::Packet& operator<<(sf::Packet& packet, Server::Comunicate& comunicate)
 {
-	packet << comunicate.operation << comunicate.answer << comunicate.messageId << comunicate.sessionId << comunicate.datasize;
+	uint32_t pom = 0;
+	pom += comunicate.operation;
+	pom <<= 3;
+	pom += comunicate.answer;
+	pom <<= 16;
+	pom += comunicate.messageId;
+	pom <<= 10;
+
+	packet << pom;
+	packet << comunicate.sessionId;
+	packet << comunicate.datasize;
+
 	for (auto& letter : comunicate.data)
 	{
 		packet << letter;
@@ -304,13 +324,34 @@ sf::Packet& operator<<(sf::Packet& packet, Server::Comunicate& comunicate)
 
 void operator>>(sf::Packet& packet, Server::Comunicate& comunicate)
 {
-	packet >> comunicate.operation >> comunicate.answer >> comunicate.messageId >> comunicate.sessionId >> comunicate.datasize;
+	uint32_t pom = 0;
+
+	packet >> pom;
+	pom >>= 10;
+	comunicate.messageId = pom;
+	pom >>= 16;
+	comunicate.answer = pom;
+	comunicate.operation = pom;
+
+	comunicate.answer <<= 5;
+	comunicate.answer >>= 5;
+
+	comunicate.operation >>= 3;
+
+	packet >> comunicate.sessionId;
+	packet >> comunicate.datasize;
+
 	UINT8 data;
-	for (uint32_t i = 0; i < comunicate.datasize; i++)
+	for (int32_t i = 0; i < comunicate.datasize; i++)
 	{
 		packet >> data;
 		comunicate.data.push_back(data);
 	}
+}
+
+void Server::print(Comunicate com)
+{
+	std::cout << "opr: " << (unsigned int)com.operation << " ans: " << (unsigned int)com.answer << "  mesID: " << (int)com.messageId << " SID: " << (unsigned int)com.sessionId << " datasize: " << (unsigned int)com.datasize << std::endl;
 }
 
 std::vector<UINT8> Server::toUINTtab(std::string string)

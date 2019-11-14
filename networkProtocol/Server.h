@@ -11,6 +11,8 @@ class Server
 {
 private:
 
+	
+
 	struct Comunicate
 	{
 		UINT8 operation;//3b
@@ -20,6 +22,7 @@ private:
 		uint32_t datasize;//32b
 		std::vector<UINT8> data;
 	};
+	void print(Comunicate);
 	struct Client
 	{
 		std::string clientName;
