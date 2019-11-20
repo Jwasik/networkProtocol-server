@@ -12,7 +12,6 @@ void Server::sendToEveryone(Comunicate comunicate)
 		packet << comunicate;
 		this->udpSocket.send(packet, clients[0]->clientIP, clients[0]->clientPort);
 		packet.clear();
-		messageId--;
 	}
 	if (clients[1] != nullptr)
 	{
@@ -23,7 +22,6 @@ void Server::sendToEveryone(Comunicate comunicate)
 		packet << comunicate;
 		packet.clear();
 		this->udpSocket.send(packet, clients[1]->clientIP, clients[1]->clientPort);
-		messageId--;
 	}
 }
 
@@ -38,7 +36,6 @@ void Server::sendTo(Comunicate comunicate, bool receiver, std::shared_ptr<Client
 	comunicate.datasize = comunicate.data.size();
 	packet << comunicate;
 	this->udpSocket.send(packet, clients[receiver]->clientIP, clients[receiver]->clientPort);
-	this->messageId--;
 }
 
 void Server::sendTo(Comunicate comunicate, std::shared_ptr<Client>& client, std::shared_ptr<Client> sender = nullptr)
@@ -50,7 +47,6 @@ void Server::sendTo(Comunicate comunicate, std::shared_ptr<Client>& client, std:
 	comunicate.sessionId = client->sessionId;
 	packet << comunicate;
 	this->udpSocket.send(packet, client->clientIP, client->clientPort);
-	this->messageId--;
 }
 
 std::string Server::prepareClientsList()
@@ -80,12 +76,12 @@ void Server::run()
 	std::cout << sf::IpAddress::getLocalAddress().toString() << std::endl;
 	srand(time(NULL));
 
-	/*Comunicate test{7,7,7,7,7,std::vector<UINT8>()};
+	Comunicate test{7,7,0,19554,3,toUINTtab("abc")};
 	Comunicate test2;
 	sf::Packet pck;
 	pck << test;
 	pck >> test2;
-	this->print(test2);*/
+	this->print(test2);
 
 	while (1)
 	{
@@ -143,13 +139,11 @@ void Server::run()
 
 					this->sendTo(answerComunicate, newCLient);
 
-					/*std::vector<UINT8> clientList = toUINTtab(this->prepareClientsList());
+					std::vector<UINT8> clientList = toUINTtab(this->prepareClientsList());
 					answerComunicate = Comunicate{ 7,7,messageId,0,this->prepareClientsList().length(),clientList };
 					if (clients[sender] != nullptr)this->sendTo(answerComunicate, sender);
-					if (clients[!sender] != nullptr)this->sendTo(answerComunicate, !sender);*/
+					if (clients[!sender] != nullptr)this->sendTo(answerComunicate, !sender);
 					std::cout << "Client joined succesfully" << std::endl;
-
-					messageId--;
 				}
 				if (receivedComunicate.answer == 3)//roz³¹cz
 				{
@@ -303,55 +297,95 @@ void Server::run()
 
 sf::Packet& operator<<(sf::Packet& packet, Server::Comunicate& comunicate)
 {
-	uint32_t pom = 0;
-	pom += comunicate.operation;
-	pom <<= 3;
-	pom += comunicate.answer;
-	pom <<= 16;
-	pom += comunicate.messageId;
-	pom <<= 10;
-
-	packet << pom;
-	packet << comunicate.sessionId;
-	packet << comunicate.datasize;
+	packet.clear();
+	std::string msg = "";
+	msg += std::bitset< 3 >(comunicate.operation).to_string();
+	msg += std::bitset< 3 >(comunicate.answer).to_string();
+	msg += std::bitset< 32 >(comunicate.datasize).to_string();
 
 	for (auto& letter : comunicate.data)
 	{
-		packet << letter;
+		msg += std::bitset< 8 >(int(letter)).to_string();
 	}
+
+	msg += std::bitset< 32 >(comunicate.sessionId).to_string();
+	msg += std::bitset< 32 >(comunicate.messageId).to_string();
+
+	while (msg.length()%32 != 0)
+	{
+		msg += '0';
+	}
+	std::cout << "msg.length()=" << msg.length() << std::endl;
+	std::cout << "prepared " << msg << std::endl;
+
+	UINT16 pom = 0;
+	while (msg.length() > 0)
+	{
+		std::string pom2 = msg.substr(0,16);
+		pom = std::stoi(pom2 , 0, 2);
+		msg.erase(0, 16);
+		packet << pom;
+	}
+	std::cout << "packet.size()=" << packet.getDataSize() << std::endl;
+
 	return packet;
 }
 
 void operator>>(sf::Packet& packet, Server::Comunicate& comunicate)
 {
-	uint32_t pom = 0;
+	std::cout << "datasize " << packet.getDataSize() << std::endl;
+	std::string msg = "";
+	UINT32 pom;
 
-	packet >> pom;
-	pom >>= 10;
-	comunicate.messageId = pom;
-	pom >>= 16;
-	comunicate.answer = pom;
-	comunicate.operation = pom;
-
-	comunicate.answer <<= 5;
-	comunicate.answer >>= 5;
-
-	comunicate.operation >>= 3;
-
-	packet >> comunicate.sessionId;
-	packet >> comunicate.datasize;
-
-	UINT8 data;
-	for (int32_t i = 0; i < comunicate.datasize; i++)
+	while (!packet.endOfPacket())
 	{
-		packet >> data;
-		comunicate.data.push_back(data);
+		packet >> pom;
+		std::string s = std::bitset< 32 >(pom).to_string();
+		msg += s;
 	}
+	std::cout << "received bytes " << msg.length() << std::endl;
+	std::cout << "received " << msg << std::endl;
+
+	std::string pom2 = msg.substr(0, 3);
+	msg.erase(0, 3);
+	comunicate.operation = std::stoi(pom2,0,2);
+
+	pom2 = msg.substr(0, 3);
+	msg.erase(0, 3);
+	comunicate.answer = std::stoi(pom2, 0, 2);
+
+	pom2 = msg.substr(0, 32);
+	msg.erase(0, 32);
+	comunicate.datasize = std::stoi(pom2, 0, 2);
+
+	for (int i = 0; i < comunicate.datasize; i++)
+	{
+		pom2 = msg.substr(0, 8);
+		msg.erase(0, 8);
+		UINT8 data;
+		if (pom2.length() != 0) 
+		{
+			data = std::stoi(pom2, 0, 2);
+			comunicate.data.push_back(data);
+		}
+	}
+
+	pom2 = msg.substr(0, 32);
+	msg.erase(0, 32);
+	comunicate.sessionId = std::stoi(pom2, 0, 2);
+
+	pom2 = msg.substr(0, 32);
+	if(pom2.length() != 0)comunicate.messageId = std::stoi(pom2, 0, 2);
 }
 
 void Server::print(Comunicate com)
 {
 	std::cout << "opr: " << (unsigned int)com.operation << " ans: " << (unsigned int)com.answer << "  mesID: " << (int)com.messageId << " SID: " << (unsigned int)com.sessionId << " datasize: " << (unsigned int)com.datasize << std::endl;
+	for (const auto &letter : com.data)
+	{
+		std::cout << letter << ' ';
+	}
+	std::cout << std::endl;
 }
 
 std::vector<UINT8> Server::toUINTtab(std::string string)

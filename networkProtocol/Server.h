@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 #include <SFML/Network.hpp>
+#include <bitset>
 
 class Server
 {
@@ -47,7 +48,7 @@ private:
 
 	std::shared_ptr<Client> clients[2];
 	std::vector<Message> messageHistory;
-	int16_t messageId = -1;
+	const int16_t messageId = 0;
 
 	sf::UdpSocket udpSocket;
 

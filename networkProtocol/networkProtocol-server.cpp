@@ -8,10 +8,12 @@
 #include <memory>
 #include <vector>
 #include <SFML/Network.hpp>
+#include <bitset>
 #include "Server.h"
 
 int main()
 {
+	std::cout << sizeof(int) << std::endl;
 	Server server;
 	server.run();
 	return 0;
