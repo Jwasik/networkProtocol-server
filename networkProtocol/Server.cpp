@@ -1,5 +1,13 @@
 #include "Server.h"
 
+unsigned int Server::countClients()
+{
+	unsigned int counter = 0;
+	if (clients[0] != nullptr)counter++;
+	if (clients[1] != nullptr)counter++;
+	return counter;
+}
+
 void Server::sendToEveryone(Comunicate comunicate)
 {
 	sf::Packet packet;
@@ -8,6 +16,7 @@ void Server::sendToEveryone(Comunicate comunicate)
 		Message message{ comunicate ,messageId ,0,nullptr,clients[0] };
 		messageHistory.push_back(message);
 		comunicate.messageId = this->messageId;
+		this->messageId++;
 		comunicate.sessionId = clients[0]->sessionId;
 		packet << comunicate;
 		this->udpSocket.send(packet, clients[0]->clientIP, clients[0]->clientPort);
@@ -18,6 +27,7 @@ void Server::sendToEveryone(Comunicate comunicate)
 		Message message{ comunicate ,messageId ,0,nullptr,clients[1] };
 		messageHistory.push_back(message);
 		comunicate.messageId = this->messageId;
+		this->messageId++;
 		comunicate.sessionId = clients[1]->sessionId;
 		packet << comunicate;
 		packet.clear();
@@ -28,8 +38,22 @@ void Server::sendToEveryone(Comunicate comunicate)
 void Server::sendTo(Comunicate comunicate, bool receiver, std::shared_ptr<Client> sender = nullptr)
 {//u¿ywana do wysy³ania komunikatu serwera
 	if (clients[receiver] == nullptr)return;
-	Message message{ comunicate ,messageId ,0,sender,clients[receiver] };
+	Message message{ comunicate ,this->messageId ,0,sender,clients[receiver] };
 	messageHistory.push_back(message);
+
+	sf::Packet packet;
+	comunicate.messageId = this->messageId;
+	this->messageId++;
+	comunicate.sessionId = clients[receiver]->sessionId;
+	comunicate.datasize = comunicate.data.size();
+	packet << comunicate;
+	this->udpSocket.send(packet, clients[receiver]->clientIP, clients[receiver]->clientPort);
+}
+
+void Server::retransmit(Comunicate comunicate, bool receiver, std::shared_ptr<Client> sender = nullptr)
+{
+	if (clients[receiver] == nullptr)return;
+	Message message{ comunicate ,comunicate.messageId ,0,sender,clients[receiver] };
 
 	sf::Packet packet;
 	comunicate.sessionId = clients[receiver]->sessionId;
@@ -40,10 +64,12 @@ void Server::sendTo(Comunicate comunicate, bool receiver, std::shared_ptr<Client
 
 void Server::sendTo(Comunicate comunicate, std::shared_ptr<Client>& client, std::shared_ptr<Client> sender = nullptr)
 {
-	Message message{ comunicate ,messageId ,0,sender,client };
+	Message message{ comunicate ,this->messageId ,0,sender,client };
 	messageHistory.push_back(message);
 
 	sf::Packet packet;
+	comunicate.messageId = this->messageId;
+	this->messageId++;
 	comunicate.sessionId = client->sessionId;
 	packet << comunicate;
 	this->udpSocket.send(packet, client->clientIP, client->clientPort);
@@ -76,24 +102,21 @@ void Server::run()
 	std::cout << sf::IpAddress::getLocalAddress().toString() << std::endl;
 	srand(time(NULL));
 
-	Comunicate test{7,7,0,19554,3,toUINTtab("abc")};
-	Comunicate test2;
-	sf::Packet pck;
-	pck << test;
-	pck >> test2;
-	this->print(test2);
-
 	while (1)
 	{
 		sf::IpAddress receivedIP;
 		unsigned short receivedPort;
 		sf::Packet receivedPacket;
+		receivedPacket.clear();
 
 		if (udpSocket.receive(receivedPacket, receivedIP, receivedPort) == sf::Socket::Done)
 		{
 			bool sender;
 			Comunicate receivedComunicate;
 			receivedPacket >> receivedComunicate;
+
+			std::cout << "received " << (int)receivedComunicate.operation << ' ' << (int)receivedComunicate.answer << std::endl;
+
 			if (clients[0] != nullptr && receivedIP == clients[0]->clientIP && receivedPort == clients[0]->clientPort)
 			{
 				sender = 0;
@@ -103,6 +126,26 @@ void Server::run()
 				sender = 1;
 			}
 			else sender = 0;
+
+			if (receivedComunicate.operation == 1)
+			{
+
+			}
+			else if (receivedComunicate.operation == 7 &&receivedComunicate.answer == 3 && receivedComunicate.messageId < 16384)//ack msg
+			{
+				//Przes³aæ dalej potwierdzenie
+				std::cout << "retransmiting: " << receivedComunicate.messageId << std::endl;
+				this->retransmit(receivedComunicate, !sender);
+				continue;
+			}
+			else if(receivedComunicate.messageId < 16384)//ack message
+			{
+				std::cout << "sending ack: " << receivedComunicate.messageId << std::endl;
+				Comunicate ackComunicate{ 7,3,receivedComunicate.messageId,clients[sender]->sessionId,0,std::vector<UINT8>() };
+				sf::Packet ackPacket;
+				ackPacket << ackComunicate;
+				this->udpSocket.send(ackPacket, receivedIP, receivedPort);
+			}
 
 			if (receivedComunicate.operation == 1)//join
 			{
@@ -137,24 +180,33 @@ void Server::run()
 					}
 					Comunicate answerComunicate = { 1,7,this->messageId,sessionId,0 ,std::vector<UINT8>() };
 
-					this->sendTo(answerComunicate, newCLient);
+					sf::Packet answerPacket;
+					answerPacket << answerComunicate;
+
+					this->udpSocket.send(answerPacket,receivedIP,receivedPort);
 
 					std::vector<UINT8> clientList = toUINTtab(this->prepareClientsList());
-					answerComunicate = Comunicate{ 7,7,messageId,0,this->prepareClientsList().length(),clientList };
-					if (clients[sender] != nullptr)this->sendTo(answerComunicate, sender);
-					if (clients[!sender] != nullptr)this->sendTo(answerComunicate, !sender);
-					std::cout << "Client joined succesfully" << std::endl;
+
+					this->messageId++;
 				}
 				if (receivedComunicate.answer == 3)//roz³¹cz
 				{
 					//roz³¹czenie
-					Comunicate answerComunicate{ 1,3,messageId,0,0,std::vector<UINT8>()};
+					Comunicate answerComunicate{ 1,4,messageId,0,0,std::vector<UINT8>()};
 					this->sendTo(answerComunicate, sender);
 					clients[sender] = nullptr;
 
 					//poinformowanie innych klientów
-					answerComunicate = Comunicate{ 7,7,0,0,0,this->toUINTtab("Client left server") };
-					answerComunicate = Comunicate{ 7,7,0,0,0,toUINTtab(this->prepareClientsList()) };
+					answerComunicate = Comunicate{ 3,3,0,0,0,this->toUINTtab("Client left server") };
+					this->sendToEveryone(answerComunicate);
+				}
+				if (receivedComunicate.answer == 5)
+				{
+					Comunicate answerComunicate{ 3,0,messageId,0,0,std::vector<UINT8>() };
+					if (countClients() == 2)answerComunicate = Comunicate{ 3,1,messageId,0,0,std::vector<UINT8>() };
+
+					if (clients[sender] != nullptr)this->sendTo(answerComunicate, sender);
+					if (clients[!sender] != nullptr)this->sendTo(answerComunicate, !sender);
 				}
 			}
 
@@ -169,7 +221,7 @@ void Server::run()
 						this->sendTo(receivedComunicate, sender);
 
 						//wys³anie opisu b³êdu
-						Comunicate message{ 7,7,0,0,26,this->toUINTtab("Not found any other client") };
+						Comunicate message{ 3,2,0,0,0,std::vector<UINT8>() };
 						this->sendTo(message, sender);
 					}
 					else if (clients[!sender]->invited == 1)//ju¿ zaproszony
@@ -179,15 +231,11 @@ void Server::run()
 						this->sendTo(receivedComunicate, sender);
 
 						//wys³anie opisu b³êdu
-						Comunicate message{ 7,7,0,0,15,this->toUINTtab("Already invited") };
+						Comunicate message{ 3,4,0,0,0,std::vector<UINT8>() };
 						this->sendTo(message, sender);
 					}
 					else
 					{
-						//wys³anie potwierdzenia zaproszenia
-						Comunicate ackComunicate{ 7,4,receivedComunicate.messageId,0,0,std::vector<UINT8>() };
-						this->sendTo(ackComunicate, sender);
-
 						//przekazanie zaproszenia
 						this->sendTo(receivedComunicate, !sender);
 						clients[!sender]->invited = 1;
@@ -198,64 +246,37 @@ void Server::run()
 				{
 					if (clients[sender]->invited == 1)//akceptacja
 					{
-						receivedComunicate.operation = 7;
-						receivedComunicate.answer = 3;
-						sendTo(receivedComunicate, sender);
-
-						Comunicate message{ 7,7,0,0,0,this->toUINTtab("Succesfully accepted invitation") };
-						this->sendTo(message, sender);
-
 						clients[sender]->ready = 1;
 						if(clients[!sender] != nullptr)clients[!sender]->ready = 1;
 
 						//poinformowanie zapraszaj¹cego
-						message = Comunicate{ 7,7,0,0,0,this->toUINTtab("Your invitation has been accepted") };
+						Comunicate message{ 3,5,0,0,0,std::vector<UINT8>()};
 						this->sendTo(message, !sender);
 					}
 					else if (clients[sender]->ready == 1)//ju¿ jest w konwersacji
 					{
-						receivedComunicate.operation = 7;
-						receivedComunicate.answer = 3;
-						sendTo(receivedComunicate, sender);
-
-						Comunicate message{ 7,7,0,0,0,this->toUINTtab("You are already member of conversation") };
+						Comunicate message{ 3,4,0,0,0,std::vector<UINT8>() };
 						this->sendTo(message, sender);
 					}
 					else//nie zosta³ zaproszony
 					{
-						receivedComunicate.operation = 7;
-						receivedComunicate.answer = 3;
-						sendTo(receivedComunicate, sender);
-
-						Comunicate message{ 7,7,0,0,0,this->toUINTtab("You are not invited to any conversation") };
+						Comunicate message{ 3,7,0,0,0,std::vector<UINT8>() };
 						this->sendTo(message, sender);
 					}
 				}
 				if (receivedComunicate.answer == 2)//deny
 				{
-					if (clients[sender]->invited == 1)//odmowa
+					if (clients[sender]->invited == 1)//ok
 					{
-						receivedComunicate.operation = 7;
-						receivedComunicate.answer = 3;
-						sendTo(receivedComunicate, sender);
-
-						Comunicate message{ 7,7,0,0,0,this->toUINTtab("Succesfully denied invitation") };
-						this->sendTo(message, sender);
-
 						clients[sender]->invited = 0;
 						if(clients[!sender] != nullptr)clients[!sender]->ready = 0;
 
-						//poinformowanie zapraszaj¹cego
-						message = Comunicate{ 7,7,0,0,0,this->toUINTtab("Your invitation has been denied") };
+						Comunicate message{ 3,6,0,0,0,std::vector<UINT8>() };
 						this->sendTo(message, !sender);
 					}
 					else//nie zosta³ zaproszony
 					{
-						receivedComunicate.operation = 7;
-						receivedComunicate.answer = 3;
-						sendTo(receivedComunicate, sender);
-
-						Comunicate message{ 7,7,0,0,0,this->toUINTtab("You are not invited to any conversation") };
+						Comunicate message{ 3,7,0,0,0,std::vector<UINT8>() };
 						this->sendTo(message, sender);
 					}
 				}
@@ -267,27 +288,13 @@ void Server::run()
 				{
 					std::cout << "Got msg from " << sender << " to " << !sender << std::endl;
 
-					//wiadomoœæ zwrotna do nadawcy (ACK)
-					Comunicate ackComunicate = receivedComunicate;
-					ackComunicate.answer = 3;
-					ackComunicate.datasize = 0;
-					ackComunicate.data = std::vector<UINT8>();
-					sf::Packet ackPacket;
-					ackPacket << ackComunicate;
-					this->sendTo(ackComunicate, sender);
-
 					//przes³anie wiadomoœci do odbiorcy
 					if (clients[!sender] != nullptr && clients[!sender]->ready == 1)
 					{
 						sf::Packet msgPacket;
 						msgPacket << receivedComunicate;
-						this->sendTo(receivedComunicate, !sender);
+						this->retransmit(receivedComunicate, !sender);
 					}
-				}
-				if (receivedComunicate.answer == 3)//ack msg
-				{
-					//Przes³aæ dalej do drugiego klienta
-					this->sendTo(receivedComunicate, !sender);
 				}
 			}
 
@@ -311,39 +318,34 @@ sf::Packet& operator<<(sf::Packet& packet, Server::Comunicate& comunicate)
 	msg += std::bitset< 32 >(comunicate.sessionId).to_string();
 	msg += std::bitset< 32 >(comunicate.messageId).to_string();
 
-	while (msg.length()%32 != 0)
+	while (msg.length()%8 != 0)
 	{
 		msg += '0';
 	}
-	std::cout << "msg.length()=" << msg.length() << std::endl;
 	std::cout << "prepared " << msg << std::endl;
 
-	UINT16 pom = 0;
+	UINT8 pom = 0;
 	while (msg.length() > 0)
 	{
-		std::string pom2 = msg.substr(0,16);
+		std::string pom2 = msg.substr(0,8);
 		pom = std::stoi(pom2 , 0, 2);
-		msg.erase(0, 16);
+		msg.erase(0, 8);
 		packet << pom;
 	}
-	std::cout << "packet.size()=" << packet.getDataSize() << std::endl;
-
 	return packet;
 }
 
 void operator>>(sf::Packet& packet, Server::Comunicate& comunicate)
 {
-	std::cout << "datasize " << packet.getDataSize() << std::endl;
 	std::string msg = "";
-	UINT32 pom;
+	UINT8 pom;
 
 	while (!packet.endOfPacket())
 	{
 		packet >> pom;
-		std::string s = std::bitset< 32 >(pom).to_string();
+		std::string s = std::bitset< 8 >(pom).to_string();
 		msg += s;
 	}
-	std::cout << "received bytes " << msg.length() << std::endl;
 	std::cout << "received " << msg << std::endl;
 
 	std::string pom2 = msg.substr(0, 3);

@@ -18,7 +18,7 @@ private:
 	{
 		UINT8 operation;//3b
 		UINT8 answer;//3b
-		int16_t messageId;//16b
+		uint16_t messageId;//16b
 		uint32_t sessionId;//32b
 		uint32_t datasize;//32b
 		std::vector<UINT8> data;
@@ -48,12 +48,14 @@ private:
 
 	std::shared_ptr<Client> clients[2];
 	std::vector<Message> messageHistory;
-	const int16_t messageId = 0;
+	uint16_t messageId = 16384;
+	unsigned int countClients();
 
 	sf::UdpSocket udpSocket;
 
 	void sendToEveryone(Comunicate);
 	void sendTo(Comunicate,bool, std::shared_ptr<Client>);
+	void retransmit(Comunicate,bool, std::shared_ptr<Client>);
 	void sendTo(Comunicate,std::shared_ptr<Client>&, std::shared_ptr<Client>);
 
 	std::string prepareClientsList();
