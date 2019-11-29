@@ -14,7 +14,7 @@ private:
 
 	
 
-	struct Comunicate
+	struct Comunicate//struktura komunikatu
 	{
 		UINT8 operation;//3b
 		UINT8 answer;//3b
@@ -23,8 +23,9 @@ private:
 		uint32_t datasize;//32b
 		std::vector<UINT8> data;
 	};
-	void print(Comunicate);
-	struct Client
+	void print(Comunicate);//metoda wypisuj¹ca zawartoœæ komunikatu na okno konsoli
+
+	struct Client//struktura klienta
 	{
 		std::string clientName;
 		sf::IpAddress clientIP;
@@ -33,7 +34,7 @@ private:
 		bool ready = 0;
 		bool invited = 0;
 	};
-	struct Message
+	struct Message//struktura wiadomoœci w historii wiadomoœci
 	{
 		Comunicate comunicate;
 		int16_t messageId;
@@ -44,25 +45,21 @@ private:
 
 	friend sf::Packet& operator<<(sf::Packet&, Server::Comunicate&);
 	friend void operator>>(sf::Packet&, Server::Comunicate&);
-	std::vector<UINT8> toUINTtab(std::string);
+	std::vector<UINT8> toUINTtab(std::string);//metoda zamieniaj¹ca string na wektor <UINT8>
 
-	std::shared_ptr<Client> clients[2];
-	std::vector<Message> messageHistory;
-	uint16_t messageId = 16384;
-	unsigned int countClients();
+	std::shared_ptr<Client> clients[2];//tablica klientów
+	std::vector<Message> messageHistory;//historia wiadomoœci
+	uint16_t messageId = 16384;//pocz¹tkowa wartoœæ id dla wiadomoœci serwera
+	unsigned int countClients();//metoda zliczaj¹ca iloœæ pod³¹czonych klientów
 
-	sf::UdpSocket udpSocket;
+	sf::UdpSocket udpSocket;//g³ówny socket komunikacyjny
 
-	void sendToEveryone(Comunicate);
-	void sendTo(Comunicate,bool, std::shared_ptr<Client>);
-	void retransmit(Comunicate,bool, std::shared_ptr<Client>);
-	void sendTo(Comunicate,std::shared_ptr<Client>&, std::shared_ptr<Client>);
-
-	std::string prepareClientsList();
+	void sendToEveryone(Comunicate);//procedura wysy³aj¹ca komunikat do wszystkich klientów
+	void sendTo(Comunicate,bool, std::shared_ptr<Client>);//procedura wysy³aj¹ca komunikat do konkretnego klienta
+	void retransmit(Comunicate,bool, std::shared_ptr<Client>);//procedura przesy³aj¹ca komunikat do konkretnego klienta bez zmiany id wiadomoœci
 
 public:
 	Server();
-	void run();
-
+	void run();//g³ówna pêtla programu
 };
 

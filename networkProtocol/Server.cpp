@@ -9,15 +9,15 @@ unsigned int Server::countClients()
 }
 
 void Server::sendToEveryone(Comunicate comunicate)
-{
+{//procedura wysy³aj¹ca komunikat do wszystkich klientów
 	sf::Packet packet;
 	if (clients[0] != nullptr)
 	{
-		Message message{ comunicate ,messageId ,0,nullptr,clients[0] };
+		Message message{ comunicate ,messageId ,0,nullptr,clients[0] };//tworzy wiadomoœæ do historii wiadomoœci
 		messageHistory.push_back(message);
-		comunicate.messageId = this->messageId;
+		comunicate.messageId = this->messageId;//nadaje numer komunikatu
 		this->messageId++;
-		comunicate.sessionId = clients[0]->sessionId;
+		comunicate.sessionId = clients[0]->sessionId;//zmienia id sesji komunikatu na id sesji odbiorcy
 		packet << comunicate;
 		this->udpSocket.send(packet, clients[0]->clientIP, clients[0]->clientPort);
 		packet.clear();
@@ -35,60 +35,31 @@ void Server::sendToEveryone(Comunicate comunicate)
 	}
 }
 
-void Server::sendTo(Comunicate comunicate, bool receiver, std::shared_ptr<Client> sender = nullptr)
-{//u¿ywana do wysy³ania komunikatu serwera
+void Server::sendTo(Comunicate comunicate, bool receiver, std::shared_ptr<Client> sender = nullptr)//receiver to numer odbiorcy. 0 lub 1
+{//u¿ywana do wysy³ania komunikatu od serwera
 	if (clients[receiver] == nullptr)return;
-	Message message{ comunicate ,this->messageId ,0,sender,clients[receiver] };
+	Message message{ comunicate ,this->messageId ,0,sender,clients[receiver] };//tworzy wiadomoœæ do historii wiadomoœci
 	messageHistory.push_back(message);
 
 	sf::Packet packet;
-	comunicate.messageId = this->messageId;
+	comunicate.messageId = this->messageId;//nadaje numer komunikatu
 	this->messageId++;
-	comunicate.sessionId = clients[receiver]->sessionId;
+	comunicate.sessionId = clients[receiver]->sessionId;//zmienia id sesji komunikatu na id sesji odbiorcy
 	comunicate.datasize = comunicate.data.size();
 	packet << comunicate;
 	this->udpSocket.send(packet, clients[receiver]->clientIP, clients[receiver]->clientPort);
 }
 
-void Server::retransmit(Comunicate comunicate, bool receiver, std::shared_ptr<Client> sender = nullptr)
-{
+void Server::retransmit(Comunicate comunicate, bool receiver, std::shared_ptr<Client> sender = nullptr)//receiver to numer odbiorcy. 0 lub 1
+{//procedura przesy³aj¹ca wiadomoœæ miêdzy klientami bez zmiany id wiadomoœci
 	if (clients[receiver] == nullptr)return;
 	Message message{ comunicate ,comunicate.messageId ,0,sender,clients[receiver] };
 
 	sf::Packet packet;
-	comunicate.sessionId = clients[receiver]->sessionId;
+	comunicate.sessionId = clients[receiver]->sessionId;//zmienia id sesji komunikatu na id sesji odbiorcy
 	comunicate.datasize = comunicate.data.size();
 	packet << comunicate;
 	this->udpSocket.send(packet, clients[receiver]->clientIP, clients[receiver]->clientPort);
-}
-
-void Server::sendTo(Comunicate comunicate, std::shared_ptr<Client>& client, std::shared_ptr<Client> sender = nullptr)
-{
-	Message message{ comunicate ,this->messageId ,0,sender,client };
-	messageHistory.push_back(message);
-
-	sf::Packet packet;
-	comunicate.messageId = this->messageId;
-	this->messageId++;
-	comunicate.sessionId = client->sessionId;
-	packet << comunicate;
-	this->udpSocket.send(packet, client->clientIP, client->clientPort);
-}
-
-std::string Server::prepareClientsList()
-{
-	std::string str = "Error, no clients";
-	if (clients[0] != nullptr && clients[1] != nullptr)
-	{
-		str = "There is one more client on server";
-		return str;
-	}
-	if (clients[0] != nullptr || clients[1] != nullptr)
-	{
-		str = "You are the only client on server";
-		return str;
-	}
-	return str;
 }
 
 Server::Server()
@@ -97,8 +68,8 @@ Server::Server()
 	udpSocket.setBlocking(false);
 }
 
-void Server::run()
-{
+void Server::run()//g³ówna procedura serwera
+{//dzia³anie serwera opiera siê na odbieraniu wiadomoœci i podejmowaniu do nich stosownych dzia³añ
 	std::cout << sf::IpAddress::getLocalAddress().toString() << std::endl;
 	srand(time(NULL));
 
@@ -115,8 +86,7 @@ void Server::run()
 			Comunicate receivedComunicate;
 			receivedPacket >> receivedComunicate;
 
-			std::cout << "received " << (int)receivedComunicate.operation << ' ' << (int)receivedComunicate.answer << std::endl;
-
+			//ustalamy nadawcê wiadomoœci, gdy nadawca nie jest klientem ustawiamy go na 0
 			if (clients[0] != nullptr && receivedIP == clients[0]->clientIP && receivedPort == clients[0]->clientPort)
 			{
 				sender = 0;
@@ -133,12 +103,12 @@ void Server::run()
 			}
 			else if (receivedComunicate.operation == 7 &&receivedComunicate.answer == 3 && receivedComunicate.messageId < 16384)//ack msg
 			{
-				//Przes³aæ dalej potwierdzenie
+				//Przesy³amy potwierdzenia wiadomoœci do drugiego klienta
 				std::cout << "retransmiting: " << receivedComunicate.messageId << std::endl;
 				this->retransmit(receivedComunicate, !sender);
 				continue;
 			}
-			else if(receivedComunicate.messageId < 16384)//ack message
+			else if(receivedComunicate.messageId < 16384)//gdy klient wyœle wiadomoœæ potwierdzamy jej odebranie przez serwer
 			{
 				std::cout << "sending ack: " << receivedComunicate.messageId << std::endl;
 				Comunicate ackComunicate{ 7,3,receivedComunicate.messageId,clients[sender]->sessionId,0,std::vector<UINT8>() };
@@ -147,28 +117,29 @@ void Server::run()
 				this->udpSocket.send(ackPacket, receivedIP, receivedPort);
 			}
 
+			//interpretacja otrzymanych pakietów
 			if (receivedComunicate.operation == 1)//join
 			{
 				if (receivedComunicate.answer == 0)
 				{
-					uint32_t sessionId = rand();
+					uint32_t sessionId = rand();//losuje nowe id sesji dla nowego klienta
 					std::cout << "set new session ID to " << sessionId << std::endl;
 					auto newCLient = clients[0];
 					if (clients[0] == nullptr)
-					{
+					{//ustawiam nowego klienta na miejscu 0 w tablicy klientów
 						clients[0] = std::make_shared<Client>(Client{ "noname",receivedIP,receivedPort,sessionId,0,0 });
 						newCLient = clients[0];
 					}
 					else
 					{
 						if (clients[1] == nullptr)
-						{
+						{//ustawiam nowego klienta na miejscu 1 w tablicy klientów jeœli 0 jest zajêce
 							clients[1] = std::make_shared<Client>(Client{ "noname",receivedIP,receivedPort,sessionId,0,0 });
 							newCLient = clients[1];
 						}
 						else
 						{
-							//gdy nie ma miejsca
+							//gdy nie ma miejsca na serwerze
 							std::cout << "nie ma miejsca" << std::endl;
 							Comunicate answerComunicate = { 1,6,this->messageId,sessionId,0 ,std::vector<UINT8>() };
 							sf::Packet answerPacket;
@@ -178,30 +149,29 @@ void Server::run()
 							continue;
 						}
 					}
-					Comunicate answerComunicate = { 1,7,this->messageId,sessionId,0 ,std::vector<UINT8>() };
+					Comunicate answerComunicate = { 1,7,this->messageId,sessionId,0 ,std::vector<UINT8>() };//tworzê komunikat z potwierdzeniem do³¹czenia do serwera
 
 					sf::Packet answerPacket;
 					answerPacket << answerComunicate;
 
-					this->udpSocket.send(answerPacket,receivedIP,receivedPort);
-
-					std::vector<UINT8> clientList = toUINTtab(this->prepareClientsList());
-
+					this->udpSocket.send(answerPacket,receivedIP,receivedPort);//wysy³am komunikat
 					this->messageId++;
+					//klient dodant
 				}
-				if (receivedComunicate.answer == 3)//roz³¹cz
+				if (receivedComunicate.answer == 3)//polecenie roz³¹czenia od serwera
 				{
-					//roz³¹czenie
+					//wys³anie potwierdzenia
 					Comunicate answerComunicate{ 1,4,messageId,0,0,std::vector<UINT8>()};
 					this->sendTo(answerComunicate, sender);
-					clients[sender] = nullptr;
+					clients[sender] = nullptr;//wyzerowanie klienta po stronie serwera
 
-					//poinformowanie innych klientów
-					answerComunicate = Comunicate{ 3,3,0,0,0,this->toUINTtab("Client left server") };
-					this->sendToEveryone(answerComunicate);
+					//poinformowanie innych klientów o od³¹czeniu klienta
+					answerComunicate = Comunicate{ 3,3,0,0,0,std::vector<UINT8>() };
+					this->sendTo(answerComunicate,!sender);
 				}
-				if (receivedComunicate.answer == 5)
+				if (receivedComunicate.answer == 5)//klient potwierdza do³¹czenie do serwera
 				{
+					//wys³anie informacji o liczbie klientów
 					Comunicate answerComunicate{ 3,0,messageId,0,0,std::vector<UINT8>() };
 					if (countClients() == 2)answerComunicate = Comunicate{ 3,1,messageId,0,0,std::vector<UINT8>() };
 
@@ -212,7 +182,7 @@ void Server::run()
 
 			if (receivedComunicate.operation == 2)//invite
 			{
-				if (receivedComunicate.answer == 0)//invite
+				if (receivedComunicate.answer == 0)//zaproszenie klienta
 				{
 					if (clients[!sender] == nullptr)//nie ma innego klienta
 					{
@@ -242,7 +212,7 @@ void Server::run()
 						clients[sender]->ready = 0;
 					}
 				}
-				if (receivedComunicate.answer == 1)//accept
+				if (receivedComunicate.answer == 1)//akceptacja zaproszenia klienta przez innego klienta
 				{
 					if (clients[sender]->invited == 1)//akceptacja
 					{
@@ -264,9 +234,9 @@ void Server::run()
 						this->sendTo(message, sender);
 					}
 				}
-				if (receivedComunicate.answer == 2)//deny
+				if (receivedComunicate.answer == 2)//odmowa zaproszenia
 				{
-					if (clients[sender]->invited == 1)//ok
+					if (clients[sender]->invited == 1)//odmowa
 					{
 						clients[sender]->invited = 0;
 						if(clients[!sender] != nullptr)clients[!sender]->ready = 0;
@@ -282,12 +252,10 @@ void Server::run()
 				}
 			}
 
-			if (receivedComunicate.operation == 7)//msg
+			if (receivedComunicate.operation == 7)//wiadomoœæ tekstowa
 			{
 				if (receivedComunicate.answer == 0)//zwyk³a wiadomoœæ
 				{
-					std::cout << "Got msg from " << sender << " to " << !sender << std::endl;
-
 					//przes³anie wiadomoœci do odbiorcy
 					if (clients[!sender] != nullptr && clients[!sender]->ready == 1)
 					{
@@ -303,34 +271,33 @@ void Server::run()
 }
 
 sf::Packet& operator<<(sf::Packet& packet, Server::Comunicate& comunicate)
-{
+{//przesy³aniekomunikatu do pakietu
 	packet.clear();
-	std::string msg = "";
-	msg += std::bitset< 3 >(comunicate.operation).to_string();
-	msg += std::bitset< 3 >(comunicate.answer).to_string();
-	msg += std::bitset< 32 >(comunicate.datasize).to_string();
+	std::string msg = "";//najpierw tworzymy string
+	msg += std::bitset< 3 >(comunicate.operation).to_string();//dodajemy do stringa kolejne pola zamieniaj¹c je na liczby binarne w postaci ci¹gu znaków
+	msg += std::bitset< 3 >(comunicate.answer).to_string();//argument <3> oznacza ¿e zamieniamy comunicate.answer na 3-bitow¹ liczbê zapisan¹ jako ci¹g znaków
+	msg += std::bitset< 32 >(comunicate.datasize).to_string();//dodajemy pole rozmiaru danych
 
-	for (auto& letter : comunicate.data)
+	for (auto& letter : comunicate.data)//dodajemy wszystkie litery z komunikatu
 	{
 		msg += std::bitset< 8 >(int(letter)).to_string();
 	}
 
-	msg += std::bitset< 32 >(comunicate.sessionId).to_string();
-	msg += std::bitset< 32 >(comunicate.messageId).to_string();
+	msg += std::bitset< 32 >(comunicate.sessionId).to_string();//dodajemy id sesji
+	msg += std::bitset< 32 >(comunicate.messageId).to_string();//dodajemy id wiadomoœci
 
-	while (msg.length()%8 != 0)
+	while (msg.length() % 8 != 0)//uzupe³niamy zerami do d³ugoœci wielokrotnoœci liczby 8
 	{
 		msg += '0';
 	}
-	std::cout << "prepared " << msg << std::endl;
 
 	UINT8 pom = 0;
 	while (msg.length() > 0)
 	{
-		std::string pom2 = msg.substr(0,8);
-		pom = std::stoi(pom2 , 0, 2);
-		msg.erase(0, 8);
-		packet << pom;
+		std::string pom2 = msg.substr(0, 8);//wczytujemy 8 bitów ze stringa do zmiennej pomocniczej
+		pom = std::stoi(pom2, 0, 2);//teraz zamieniamy 8 bitów ze zmiennej pomocniczej na liczbê reprezentowan¹ przez te 8 bitów
+		msg.erase(0, 8);//wycinamy ze stringa 8 bitów
+		packet << pom;//wrzucamy 8 bitów do pakietu. Czynnoœæ powtarzamy a¿ string bêdzie pusty
 	}
 	return packet;
 }
@@ -342,22 +309,25 @@ void operator>>(sf::Packet& packet, Server::Comunicate& comunicate)
 
 	while (!packet.endOfPacket())
 	{
-		packet >> pom;
-		std::string s = std::bitset< 8 >(pom).to_string();
+		packet >> pom;//wczytujemy 8 bitów pakietu do zmiennej 8-bitowej
+		std::string s = std::bitset< 8 >(pom).to_string();//zamieniamy zmienn¹ 8 bitow¹ na ci¹g znaków binarnych i dodajemy do stringa
 		msg += s;
 	}
-	std::cout << "received " << msg << std::endl;
 
-	std::string pom2 = msg.substr(0, 3);
+	std::string pom2 = msg.substr(0, 3);//wyci¹gamy 3 bity ze stringa
 	msg.erase(0, 3);
-	comunicate.operation = std::stoi(pom2,0,2);
+	if (pom2.length() == 0)return;
+	comunicate.operation = std::stoi(pom2, 0, 2);//zamieniamy wyci¹gniête 3 bity na zmienn¹ i zapisujemy je do komunikatu
+												 //czynoœæ powtarzamy dla wszystkich pól
 
 	pom2 = msg.substr(0, 3);
 	msg.erase(0, 3);
+	if (pom2.length() == 0)return;
 	comunicate.answer = std::stoi(pom2, 0, 2);
 
 	pom2 = msg.substr(0, 32);
 	msg.erase(0, 32);
+	if (pom2.length() == 0)return;
 	comunicate.datasize = std::stoi(pom2, 0, 2);
 
 	for (int i = 0; i < comunicate.datasize; i++)
@@ -365,7 +335,7 @@ void operator>>(sf::Packet& packet, Server::Comunicate& comunicate)
 		pom2 = msg.substr(0, 8);
 		msg.erase(0, 8);
 		UINT8 data;
-		if (pom2.length() != 0) 
+		if (pom2.length() != 0)
 		{
 			data = std::stoi(pom2, 0, 2);
 			comunicate.data.push_back(data);
@@ -377,11 +347,12 @@ void operator>>(sf::Packet& packet, Server::Comunicate& comunicate)
 	comunicate.sessionId = std::stoi(pom2, 0, 2);
 
 	pom2 = msg.substr(0, 32);
-	if(pom2.length() != 0)comunicate.messageId = std::stoi(pom2, 0, 2);
+	if (pom2.length() != 0)comunicate.messageId = std::stoi(pom2, 0, 2);
+
 }
 
 void Server::print(Comunicate com)
-{
+{//procedura wyœwietlaj¹ca zawartoœæ komunikatu
 	std::cout << "opr: " << (unsigned int)com.operation << " ans: " << (unsigned int)com.answer << "  mesID: " << (int)com.messageId << " SID: " << (unsigned int)com.sessionId << " datasize: " << (unsigned int)com.datasize << std::endl;
 	for (const auto &letter : com.data)
 	{
@@ -391,7 +362,7 @@ void Server::print(Comunicate com)
 }
 
 std::vector<UINT8> Server::toUINTtab(std::string string)
-{
+{//zamiania tablicy string, na wektor <UINT8>
 	std::vector<UINT8> vector;
 	for (const auto& letter : string)
 	{
